@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>安心助手 - 校园应急双模式指引工具</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -1057,7 +1059,7 @@
                 <h1>生成谈话记录</h1>
                 <p>填写以下信息归档</p>
             </div>
-            <div class="content">
+            <div class="content" id="counseling-record-content">
                 <form id="counseling-record-form">
                     <div class="form-group">
                         <label class="form-label">关联学生</label>
@@ -1143,7 +1145,7 @@
                 <h1>生成急救记录</h1>
                 <p>填写以下信息归档</p>
             </div>
-            <div class="content">
+            <div class="content" id="firstaid-record-content">
                 <form id="firstaid-record-form">
                     <div class="form-group">
                         <label class="form-label">关联学生</label>
@@ -2676,7 +2678,108 @@
         }
         
         function printRecord(type) {
-            window.print();
+            // 检测是否为移动设备
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                // 移动设备：下载为PDF
+                downloadAsPDF(type);
+            } else {
+                // 桌面设备：直接打印
+                window.print();
+            }
+        }
+        
+        function downloadAsPDF(type) {
+            showToast('正在生成PDF...', 'info');
+            
+            // 获取记录内容
+            let contentElement;
+            if (type === 'counseling') {
+                contentElement = document.getElementById('counseling-record-content');
+            } else if (type === 'firstaid') {
+                contentElement = document.getElementById('firstaid-record-content');
+            }
+            
+            if (!contentElement) {
+                showToast('未找到记录内容', 'error');
+                return;
+            }
+            
+            // 克隆元素以避免影响原页面
+            const clone = contentElement.cloneNode(true);
+            
+            // 移除不需要的元素
+            const noPrintElements = clone.querySelectorAll('.no-print');
+            noPrintElements.forEach(el => el.remove());
+            
+            // 设置克隆元素的样式
+            clone.style.width = '100%';
+            clone.style.maxWidth = '800px';
+            clone.style.margin = '0 auto';
+            clone.style.padding = '20px';
+            clone.style.background = 'white';
+            
+            // 添加到临时容器
+            const tempContainer = document.createElement('div');
+            tempContainer.style.position = 'fixed';
+            tempContainer.style.left = '-9999px';
+            tempContainer.appendChild(clone);
+            document.body.appendChild(tempContainer);
+            
+            // 使用html2canvas捕获内容
+            html2canvas(clone, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                letterRendering: true
+            }).then(canvas => {
+                // 创建PDF
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                
+                const imgData = canvas.toDataURL('image/png');
+                const imgWidth = 210;
+                const pageHeight = 297;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                let heightLeft = imgHeight;
+                let position = 0;
+                
+                // 添加图片到PDF
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+                
+                // 处理多页
+                while (heightLeft >= 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+                
+                // 下载PDF
+                const fileName = type === 'counseling' ? '谈心记录.pdf' : '急救记录.pdf';
+                pdf.save(fileName);
+                
+                // 清理临时元素
+                document.body.removeChild(tempContainer);
+                
+                showToast('PDF已生成并下载', 'success');
+            }).catch(error => {
+                console.error('生成PDF失败:', error);
+                showToast('生成PDF失败', 'error');
+                document.body.removeChild(tempContainer);
+            });
+        }
+        
+        function showPrintOptions(type) {
+            showModal('打印选项', `
+                <div style="padding: 20px 0;">
+                    <p style="margin-bottom: 20px;">请选择打印方式：</p>
+                    <button class="btn btn-primary btn-block" onclick="window.print(); closeModal();" style="margin-bottom: 12px;">直接打印</button>
+                    <button class="btn btn-outline btn-block" onclick="downloadAsPDF('${type}'); closeModal();">下载为PDF</button>
+                </div>
+            `);
         }
         
         function showModal(title, content) {
